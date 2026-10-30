@@ -1,0 +1,24 @@
+# Installed dependencies and production build
+node_modules/
+dist/
+
+# Credentials and machine-local configuration
+.env
+.env.*
+*.local
+/.aws/
+/.codex/
+/.agents/
+
+# Editor-local files and temporary output
+.vscode/
+.idea/
+.zed/
+*.swp
+*.swo
+*~
+*.tmp
+*.temp
+*.log
+.DS_Store
+Thumbs.db
