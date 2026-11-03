@@ -37,7 +37,9 @@ test("catalog follows all pages without relying on the backend origin", async ()
 
 test("authorization and validation errors are shown in Spanish", async () => {
   globalThis.document = { cookie: "" };
-  globalThis.fetch = async () => ({ ok: false, status: 403, json: async () => ({}) });
+  globalThis.fetch = async url => url === "/api/auth/session/"
+    ? { ok: true, json: async () => ({ authenticated: false, user: null, permissions: [] }) }
+    : { ok: false, status: 403, json: async () => ({}) };
   await assert.rejects(request("/api/bank-transaction/"), /Inicie sesión/);
   globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ house: ["Casa inválida"] }) });
   await assert.rejects(request("/api/bank-transaction/"), /Casa inválida/);

@@ -1,5 +1,17 @@
 <script setup>
 import { ref } from "vue";
+import { useRouter } from "vue-router";
+import { logout } from "../auth/session.js";
+const router = useRouter();
+const logoutError = ref("");
+const loggingOut = ref(false);
+async function signOut() {
+  loggingOut.value = true;
+  logoutError.value = "";
+  try { await logout(); await router.replace("/login"); }
+  catch (error) { logoutError.value = error.message; }
+  finally { loggingOut.value = false; }
+}
 const drawer = ref(null);
 const links = [
   { title: "Resumen", to: "/resumen", icon: "mdi-view-dashboard-outline" },
@@ -49,8 +61,27 @@ const links = [
         color="primary"
       />
     </v-list>
+    <template #append>
+      <v-divider />
+      <v-list nav>
+        <v-list-item
+          title="Cerrar sesión"
+          prepend-icon="mdi-logout"
+          color="primary"
+          :disabled="loggingOut"
+          @click="signOut"
+        >
+          <template v-if="loggingOut" #append>
+            <v-progress-circular indeterminate size="20" width="2" />
+          </template>
+        </v-list-item>
+      </v-list>
+    </template>
   </v-navigation-drawer>
   <v-main class="bg-grey-lighten-4">
-    <v-container fluid><router-view /></v-container>
+    <v-container fluid>
+      <v-alert v-if="logoutError" type="error" class="mb-4">{{ logoutError }}</v-alert>
+      <router-view />
+    </v-container>
   </v-main>
 </template>
