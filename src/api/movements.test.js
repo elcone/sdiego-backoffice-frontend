@@ -48,3 +48,15 @@ test("non-JSON failures still provide a useful error", async () => {
   globalThis.fetch = async () => ({ ok: false, status: 500, json: async () => { throw new Error(); } });
   await assert.rejects(request("/api/bank-transaction/"), /No se pudo completar/);
 });
+
+test("DELETE sends CSRF without a body and accepts an empty 204 response", async () => {
+  globalThis.document = { cookie: "csrftoken=local-token" };
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, "/api/expense-type/3/");
+    assert.equal(options.method, "DELETE");
+    assert.equal(options.headers["X-CSRFToken"], "local-token");
+    assert.equal(options.body, undefined);
+    return { ok: true, status: 204, json: async () => { throw new Error("Empty body"); } };
+  };
+  assert.equal(await request("/api/expense-type/3/", { method: "DELETE" }), null);
+});
