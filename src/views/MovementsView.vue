@@ -1,20 +1,39 @@
 <script setup>
-import { computed, reactive, ref, watch } from "vue";
+import { computed, reactive, ref, watch, onBeforeUnmount } from "vue";
 import { VDateInput } from "vuetify/labs/VDateInput";
-import {
-  movements,
-  houses,
-  expenseTypes,
-  isClassified,
-  money,
-} from "../data/mock";
+import { request, catalog } from "../api/movements";
 
-const tab = ref("all");
+const movements = ref([]);
+const houses = ref([]);
+const expenseTypes = ref([]);
+const canChange = ref(false);
+const loading = ref(false);
+const error = ref("");
+const editError = ref("");
+const saving = ref(false);
+const detailLoading = ref(null);
+const count = ref(0);
+const page = ref(1);
+const pageSize = ref(50);
+const sortBy = ref([{ key: "date", order: "desc" }]);
+const moneyFormatter = new Intl.NumberFormat("es-MX", {
+  style: "currency",
+  currency: "MXN",
+});
+const money = (value) => value == null ? "—" : moneyFormatter.format(value);
+const mapMovement = (item) => ({
+  ...item,
+  date: item.transaction_timestamp,
+  type: item.line_type,
+  receipt: item.bank_receipt,
+});
+
+const tab = ref(null);
 const search = ref("");
 const dateRange = ref([]);
-const filtersOpen = ref(false);
-const lineType = ref(null);
-const status = ref(null);
+const searchOpen = ref(false);
+const searchScope = ref("all");
+const review = ref(null);
 const dialog = ref(false);
 const selected = ref(null);
 const draft = reactive({
@@ -30,22 +49,15 @@ const lineLabels = {
   COMMISSION: "Comisión",
   COMMISSION_VAT: "IVA comisión",
 };
-const statusOptions = [
-  { title: "Pendientes", value: "pending" },
-  { title: "Clasificados", value: "classified" },
+const searchScopes = [
+  { title: "Todo", value: "all", icon: "mdi-format-list-bulleted" },
+  { title: "Casa", value: "house", icon: "mdi-home-outline" },
+  { title: "Concepto", value: "concept", icon: "mdi-text-box-outline" },
 ];
-const lineOptions = computed(() =>
-  Object.entries(lineLabels)
-    .filter(
-      ([type]) =>
-        tab.value === "all" ||
-        (tab.value === "credit" ? type === "CREDIT" : type !== "CREDIT"),
-    )
-    .map(([value, title]) => ({ title, value })),
+
+const selectedSearchScope = computed(() =>
+  searchScopes.find(scope => scope.value === searchScope.value),
 );
-watch(tab, () => {
-  lineType.value = null;
-});
 
 const dateFormatter = new Intl.DateTimeFormat("es-MX");
 const timeFormatter = new Intl.DateTimeFormat("es-MX", {
@@ -56,92 +68,36 @@ const timeFormatter = new Intl.DateTimeFormat("es-MX", {
 const movementDate = (value) => dateFormatter.format(new Date(value));
 const movementTime = (value) => timeFormatter.format(new Date(value));
 
-// Compare local calendar days so the last day of the range is inclusive.
-function dateKey(value) {
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
-}
 const rangeBounds = computed(() => {
-  const days = (dateRange.value || []).map(dateKey).sort();
-  return { start: days[0], end: days[days.length - 1] };
+  const days = (dateRange.value || [])
+    .filter(Boolean)
+    .map(value => new Date(value))
+    .sort((a, b) => a - b);
+  if (!days.length) return {};
+  const start = new Date(days[0]);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(days[days.length - 1]);
+  end.setHours(0, 0, 0, 0);
+  end.setDate(end.getDate() + 1);
+  return { timestamp_from: start.toISOString(), timestamp_before: end.toISOString() };
 });
-const rangedMovements = computed(() =>
-  movements.filter((item) => {
-    const day = dateKey(new Date(item.date));
-    return (
-      (!rangeBounds.value.start || day >= rangeBounds.value.start) &&
-      (!rangeBounds.value.end || day <= rangeBounds.value.end)
-    );
-  }),
+const activeFilterCount = computed(() =>
+  Number(tab.value != null) +
+  Number(review.value != null) +
+  Number(Boolean(search.value?.trim())) +
+  Number(Boolean(dateRange.value?.length)),
 );
-// Balances are recorded demo values, never derived from movement amounts.
-const bankBalance = computed(() => {
-  const latestByAccount = new Map();
-  for (const item of movements) {
-    const previous = latestByAccount.get(item.accountId);
-    if (!previous || new Date(item.date) > new Date(previous.date)) {
-      latestByAccount.set(item.accountId, item);
-    }
-  }
-  return [...latestByAccount.values()].reduce(
-    (total, item) => total + item.balance,
-    0,
-  );
-});
-const indicators = computed(() => {
-  const totals = { income: 0, expense: 0, commission: 0 };
-  for (const item of rangedMovements.value) {
-    if (item.type === "CREDIT") totals.income += item.amount;
-    else if (item.type === "DEBIT") totals.expense += item.amount;
-    else if (item.type === "COMMISSION" || item.type === "COMMISSION_VAT")
-      totals.commission += item.amount;
-  }
-  return [
-    {
-      title: "Saldo bancario",
-      amount: bankBalance.value,
-      icon: "mdi-bank-outline",
-      color: "primary",
-    },
-    {
-      title: "Ingresos",
-      amount: totals.income,
-      icon: "mdi-bank-transfer-in",
-      color: "success",
-    },
-    {
-      title: "Egresos",
-      amount: totals.expense,
-      icon: "mdi-bank-transfer-out",
-      color: "error",
-    },
-    {
-      title: "Comisiones + IVA",
-      amount: totals.commission,
-      icon: "mdi-bank-minus",
-      color: "error",
-    },
-  ];
-});
-const activeFilters = computed(() => [
-  ...(dateRange.value?.length
-    ? [
-        `Fechas: ${movementDate(dateRange.value[0])} – ${movementDate(dateRange.value[dateRange.value.length - 1])}`,
-      ]
-    : []),
-  ...(status.value != null
-    ? [
-        `Estado: ${statusOptions.find((option) => option.value === status.value).title}`,
-      ]
-    : []),
-  ...(lineType.value != null ? [`Línea: ${lineLabels[lineType.value]}`] : []),
-]);
+const canClearFilters = computed(() =>
+  activeFilterCount.value > 0 || searchScope.value !== "all",
+);
+
 const headers = computed(() => [
   { title: "Fecha", key: "date", nowrap: true },
   { title: "Hora", key: "time", sortable: false, nowrap: true },
   { title: "Línea", key: "type", nowrap: true },
   { title: "Importe", key: "amount", align: "end", nowrap: true },
   { title: "Concepto", key: "concept" },
-  ...(tab.value === "all"
+  ...(tab.value == null
     ? []
     : [
         {
@@ -154,119 +110,158 @@ const headers = computed(() => [
       ]),
   { title: "Acciones", key: "actions", sortable: false },
 ]);
-const filtered = computed(() => {
-  const query = (search.value || "").trim().toLocaleLowerCase("es");
-  return rangedMovements.value.filter(
-    (item) =>
-      (tab.value === "all" ||
-        (tab.value === "credit"
-          ? item.type === "CREDIT"
-          : item.type !== "CREDIT")) &&
-      (!query ||
-        `${item.receipt} ${item.concept}`
-          .toLocaleLowerCase("es")
-          .includes(query)) &&
-      (lineType.value == null || item.type === lineType.value) &&
-      (status.value == null ||
-        (status.value === "classified"
-          ? isClassified(item)
-          : !isClassified(item))),
-  );
-});
-
-function edit(item) {
-  selected.value = item;
-  draft.assignment = item.type === "CREDIT" ? item.houseId : item.expenseTypeId;
-  draft.description = item.description;
-  draft.is_reviewed = item.is_reviewed;
-  dialog.value = true;
+let listRequest = 0;
+async function load() {
+  const current = ++listRequest;
+  loading.value = true;
+  error.value = "";
+  const fields = {
+    date: "transaction_timestamp",
+    type: "line_type",
+    amount: "amount",
+    concept: "concept",
+    description: "description",
+    is_reviewed: "is_reviewed",
+  };
+  const params = new URLSearchParams({
+    page: page.value,
+    page_size: pageSize.value,
+    tab: tab.value || "all",
+    search_scope: searchScope.value,
+  });
+  if (search.value?.trim()) params.set("search", search.value.trim());
+  if (review.value != null) {
+    params.set("is_reviewed", String(review.value === "reviewed"));
+  }
+  for (const [key, value] of Object.entries(rangeBounds.value)) {
+    params.set(key, value);
+  }
+  const ordering = sortBy.value
+    .map(({key, order}) => `${order === "desc" ? "-" : ""}${fields[key]}`)
+    .join(",");
+  params.set("ordering", ordering || "-transaction_timestamp");
+  try {
+    const [data, summary] = await Promise.all([
+      request(`/api/bank-transaction/?${params}`),
+      request(`/api/bank-transaction/summary/?${new URLSearchParams(rangeBounds.value)}`),
+    ]);
+    if (current !== listRequest) return;
+    movements.value = data.results.map(mapMovement);
+    count.value = data.count;
+    canChange.value = summary.can_change;
+  } catch (failure) {
+    if (current !== listRequest) return;
+    error.value = failure.message;
+    movements.value = [];
+    count.value = 0;
+    canChange.value = false;
+  } finally {
+    if (current === listRequest) loading.value = false;
+  }
 }
-function save() {
-  if (!selected.value) return;
-  selected.value[
-    selected.value.type === "CREDIT" ? "houseId" : "expenseTypeId"
-  ] = draft.assignment;
-  selected.value.description = draft.description;
-  selected.value.is_reviewed = draft.is_reviewed;
-  dialog.value = false;
-  saved.value = true;
+let searchTimer;
+onBeforeUnmount(() => {
+  clearTimeout(searchTimer);
+  listRequest++;
+});
+function reloadFirstPage() {
+  if (page.value !== 1) page.value = 1;
+  else load();
+}
+watch(
+  [tab, review, searchScope, rangeBounds, pageSize, sortBy],
+  reloadFirstPage,
+  { deep: true },
+);
+watch(search, () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(reloadFirstPage, 300);
+});
+watch(page, load);
+load();
+
+async function edit(item) {
+  if (detailLoading.value != null) return;
+  detailLoading.value = item.id;
+  editError.value = "";
+  error.value = "";
+  selected.value = null;
+  try {
+    const [detail, houseList, expenseList] = await Promise.all([
+      request(`/api/bank-transaction/${item.id}/`), catalog("house"), catalog("expense-type"),
+    ]);
+    selected.value = mapMovement(detail);
+    houses.value = houseList.map(house => ({ ...house, name: String(house.number) }));
+    expenseTypes.value = expenseList;
+    draft.assignment = detail.line_type === "CREDIT" ? detail.house : detail.expense_type;
+    draft.description = detail.description;
+    draft.is_reviewed = detail.is_reviewed;
+    dialog.value = true;
+  } catch (failure) {
+    error.value = failure.message;
+  } finally {
+    detailLoading.value = null;
+  }
+}
+async function save() {
+  if (!selected.value || saving.value) return;
+  saving.value = true;
+  editError.value = "";
+  try {
+    await request(`/api/bank-transaction/${selected.value.id}/`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        [selected.value.type === "CREDIT" ? "house" : "expense_type"]: draft.assignment,
+        description: draft.description,
+        is_reviewed: draft.is_reviewed,
+      }),
+    });
+    dialog.value = false;
+    saved.value = true;
+    await load();
+  } catch (failure) {
+    editError.value = failure.message;
+  } finally {
+    saving.value = false;
+  }
 }
 function clearFilters() {
   search.value = "";
   dateRange.value = [];
-  status.value = null;
-  lineType.value = null;
+  tab.value = null;
+  review.value = null;
+  searchScope.value = "all";
 }
 </script>
 
 <template>
-  <section aria-label="Indicadores de movimientos" class="mb-4">
-    <v-row>
-      <v-col
-        v-for="indicator in indicators"
-        :key="indicator.title"
-        cols="12"
-        sm="6"
-        md="3"
-      >
-        <v-card flat border>
-          <v-card-text class="d-flex align-center justify-space-between ga-2">
-            <div>
-              <h2 class="text-body-2 text-medium-emphasis mb-1">
-                {{ indicator.title }}
-              </h2>
-              <p class="text-subtitle-1 font-weight-medium">
-                {{ money(indicator.amount) }}
-              </p>
-            </div>
-            <v-icon :icon="indicator.icon" :color="indicator.color" />
-          </v-card-text>
-        </v-card>
-      </v-col>
-    </v-row>
-  </section>
-
   <v-card flat border>
     <v-card-text role="group" aria-label="Encabezado de movimientos">
-      <div class="d-flex align-center justify-space-between ga-2 mb-4">
+      <div class="d-flex flex-wrap align-center justify-space-between ga-2">
         <h1 class="text-h6">Movimientos bancarios</h1>
-        <div class="d-flex align-center ga-1 flex-shrink-0">
+        <div class="d-flex flex-wrap align-center ga-2">
           <v-btn-toggle
             v-model="tab"
-            mandatory
             divided
             border
             color="primary"
             variant="text"
             aria-label="Tipo de movimientos"
           >
-            <v-tooltip text="Todos">
-              <template #activator="{ props }">
-                <v-btn
-                  v-bind="props"
-                  value="all"
-                  icon
-                  :aria-pressed="tab === 'all'"
-                  aria-label="Todos"
-                >
-                  <v-icon
-                    icon="mdi-format-list-bulleted"
-                    :class="{ 'text-medium-emphasis': tab !== 'all' }"
-                  />
-                </v-btn>
-              </template>
-            </v-tooltip>
             <v-tooltip text="Ingresos">
               <template #activator="{ props }">
                 <v-btn
                   v-bind="props"
                   value="credit"
                   icon
+                  width="48"
+                  height="100%"
                   :aria-pressed="tab === 'credit'"
                   aria-label="Ingresos"
                 >
                   <v-icon
-                    icon="mdi-bank-transfer-in"
+                    size="24"
+                    icon="mdi-bank-plus"
                     :class="{ 'text-medium-emphasis': tab !== 'credit' }"
                   />
                 </v-btn>
@@ -278,33 +273,107 @@ function clearFilters() {
                   v-bind="props"
                   value="debit"
                   icon
+                  width="48"
+                  height="100%"
                   :aria-pressed="tab === 'debit'"
                   aria-label="Egresos"
                 >
                   <v-icon
-                    icon="mdi-bank-transfer-out"
+                    size="24"
+                    icon="mdi-bank-minus"
                     :class="{ 'text-medium-emphasis': tab !== 'debit' }"
                   />
                 </v-btn>
               </template>
             </v-tooltip>
           </v-btn-toggle>
-          <v-btn-group divided border color="primary" variant="text">
-            <v-tooltip text="Filtros">
+          <v-btn-toggle
+            v-model="review"
+            divided
+            border
+            color="primary"
+            variant="text"
+            aria-label="Revisión de movimientos"
+          >
+            <v-tooltip text="Revisados">
+              <template #activator="{ props }">
+                <v-btn
+                  v-bind="props"
+                  value="reviewed"
+                  icon
+                  width="48"
+                  height="100%"
+                  :aria-pressed="review === 'reviewed'"
+                  aria-label="Revisados"
+                >
+                  <v-icon
+                    size="24"
+                    icon="mdi-check-circle-outline"
+                    :class="{ 'text-medium-emphasis': review !== 'reviewed' }"
+                  />
+                </v-btn>
+              </template>
+            </v-tooltip>
+            <v-tooltip text="Pendientes">
+              <template #activator="{ props }">
+                <v-btn
+                  v-bind="props"
+                  value="pending"
+                  icon
+                  width="48"
+                  height="100%"
+                  :aria-pressed="review === 'pending'"
+                  aria-label="Pendientes"
+                >
+                  <v-icon
+                    size="24"
+                    icon="mdi-clock-outline"
+                    :class="{ 'text-medium-emphasis': review !== 'pending' }"
+                  />
+                </v-btn>
+              </template>
+            </v-tooltip>
+          </v-btn-toggle>
+          <v-btn-group divided border variant="text">
+            <v-tooltip text="Buscar">
               <template #activator="{ props }">
                 <v-btn
                   v-bind="props"
                   icon
-                  :active="filtersOpen"
-                  aria-label="Filtros"
-                  :aria-pressed="filtersOpen"
-                  :aria-expanded="filtersOpen"
-                  aria-controls="movement-filters"
-                  @click="filtersOpen = !filtersOpen"
+                  width="48"
+                  height="100%"
+                  :color="searchOpen ? 'primary' : undefined"
+                  :active="searchOpen"
+                  aria-label="Buscar"
+                  :aria-pressed="searchOpen"
+                  :aria-expanded="searchOpen"
+                  aria-controls="movement-search"
+                  @click="searchOpen = !searchOpen"
                 >
                   <v-icon
-                    icon="mdi-filter-variant"
-                    :class="{ 'text-medium-emphasis': !filtersOpen }"
+                    size="24"
+                    icon="mdi-magnify"
+                    :class="{ 'text-medium-emphasis': !searchOpen }"
+                  />
+                </v-btn>
+              </template>
+            </v-tooltip>
+            <v-tooltip text="Limpiar filtros">
+              <template #activator="{ props }">
+                <v-btn
+                  v-bind="props"
+                  icon
+                  width="48"
+                  height="100%"
+                  :active="false"
+                  :disabled="!canClearFilters"
+                  aria-label="Limpiar filtros"
+                  @click="clearFilters"
+                >
+                  <v-icon
+                    icon="mdi-filter-remove-outline"
+                    size="24"
+                    class="text-medium-emphasis"
                   />
                 </v-btn>
               </template>
@@ -312,39 +381,92 @@ function clearFilters() {
           </v-btn-group>
         </div>
       </div>
-      <v-text-field
-        v-model="search"
-        placeholder="Buscar por recibo o concepto"
-        aria-label="Buscar por recibo o concepto"
-        prepend-inner-icon="mdi-magnify"
-        rounded="pill"
-        variant="outlined"
-        density="compact"
-        clearable
-        hide-details
-      />
-      <div
-        v-if="activeFilters.length"
-        class="d-flex flex-wrap align-center ga-2 mt-4"
-      >
-        <v-chip v-for="filter in activeFilters" :key="filter" variant="tonal">{{
-          filter
-        }}</v-chip>
-      </div>
+      <v-row v-show="searchOpen" id="movement-search" class="mt-2" dense>
+        <v-col cols="12" md="9">
+          <v-text-field
+            v-model="search"
+            placeholder="Buscar"
+            aria-label="Búsqueda de movimientos"
+            prepend-inner-icon="mdi-magnify"
+            rounded="pill"
+            variant="outlined"
+            density="compact"
+            clearable
+            hide-details
+          >
+            <template #append-inner>
+              <v-menu>
+                <template #activator="{ props }">
+                  <v-btn
+                    v-bind="props"
+                    :icon="selectedSearchScope.icon"
+                    :aria-label="`Alcance: ${selectedSearchScope.title}`"
+                    :title="`Buscar en: ${selectedSearchScope.title}`"
+                    size="small"
+                    width="32"
+                    height="32"
+                    variant="text"
+                  />
+                </template>
+                <v-list aria-label="Alcance de búsqueda" density="compact">
+                  <v-list-item
+                    v-for="scope in searchScopes"
+                    :key="scope.value"
+                    :title="scope.title"
+                    :prepend-icon="scope.icon"
+                    :active="searchScope === scope.value"
+                    :append-icon="searchScope === scope.value ? 'mdi-check' : undefined"
+                    color="primary"
+                    @click="searchScope = scope.value"
+                  />
+                </v-list>
+              </v-menu>
+            </template>
+          </v-text-field>
+        </v-col>
+        <v-col cols="12" md="3">
+          <VDateInput
+            v-model="dateRange"
+            placeholder="Buscar por fecha"
+            aria-label="Buscar por fecha"
+            :prepend-icon="null"
+            prepend-inner-icon="mdi-calendar-range"
+            multiple="range"
+            :hide-actions="false"
+            ok-text="Aplicar"
+            cancel-text="Cancelar"
+            input-format="dd/mm/yyyy"
+            rounded="pill"
+            variant="outlined"
+            density="compact"
+            hide-details
+            clearable
+            :picker-props="{ elevation: 0, border: true }"
+          />
+        </v-col>
+      </v-row>
     </v-card-text>
     <v-divider />
     <v-row no-gutters>
-      <v-col
-        cols="12"
-        :md="filtersOpen ? 8 : 12"
-        class="order-last order-md-first"
-      >
-        <v-data-table
+      <v-col cols="12">
+        <v-alert v-if="error" type="error" class="ma-4">
+          {{ error }}
+          <v-btn variant="text" @click="load">Reintentar</v-btn>
+          <v-btn href="/accounts/login/?next=/movimientos" variant="text">
+            Iniciar sesión
+          </v-btn>
+        </v-alert>
+        <v-data-table-server
           :headers="headers"
-          :items="filtered"
-          :items-per-page="50"
+          :items="movements"
+          :items-length="count"
+          :loading="loading"
+          loading-text="Cargando movimientos…"
+          no-data-text="No hay movimientos para los filtros seleccionados."
+          v-model:page="page"
+          v-model:items-per-page="pageSize"
           :items-per-page-options="[10, 25, 50, 100]"
-          :sort-by="[{ key: 'date', order: 'desc' }]"
+          v-model:sort-by="sortBy"
         >
           <template #item.date="{ item }">{{
             movementDate(item.date)
@@ -362,20 +484,20 @@ function clearFilters() {
           <template #item.amount="{ item }">
             <span :class="item.type === 'CREDIT' ? 'text-success' : ''"
               >{{ item.type === "CREDIT" ? "+" : "−"
-              }}{{ money(item.amount) }}</span
+              }}{{ money(Math.abs(Number(item.amount))) }}</span
             >
           </template>
           <template #item.assignment="{ item }">
             {{
               item.type === "CREDIT"
-                ? houses.find((h) => h.id === item.houseId)?.name ||
+                ? item.house_label ||
                   "Sin asignar"
-                : expenseTypes.find((t) => t.id === item.expenseTypeId)?.name ||
-                  "Pendiente"
+                : item.expense_type_label ||
+                  ""
             }}
           </template>
           <template #item.description="{ item }">{{
-            item.description || "Sin descripción"
+            item.description || ""
           }}</template>
           <template #item.is_reviewed="{ item }">
             <v-chip
@@ -397,6 +519,8 @@ function clearFilters() {
                   icon
                   variant="text"
                   size="small"
+                  :disabled="!canChange || detailLoading != null"
+                  :loading="detailLoading === item.id"
                   :aria-label="`Editar movimiento ${item.receipt}`"
                   @click="edit(item)"
                 >
@@ -405,79 +529,16 @@ function clearFilters() {
               </template>
             </v-tooltip>
           </template>
-        </v-data-table>
-      </v-col>
-      <v-col
-        v-if="filtersOpen"
-        id="movement-filters"
-        cols="12"
-        md="4"
-        class="order-first order-md-last border-s"
-      >
-        <section aria-label="Filtros de movimientos" class="pa-4">
-          <div class="d-flex align-center justify-space-between mb-4">
-            <h2 class="text-subtitle-2 text-medium-emphasis">Filtros</h2>
-            <v-btn
-              icon="mdi-close"
-              variant="text"
-              density="compact"
-              aria-label="Cerrar filtros"
-              @click="filtersOpen = false"
-            />
-          </div>
-          <VDateInput
-            v-model="dateRange"
-            label="Rango de fechas"
-            :prepend-icon="null"
-            multiple="range"
-            :hide-actions="false"
-            ok-text="Aplicar"
-            cancel-text="Cancelar"
-            input-format="dd/mm/yyyy"
-            clearable
-            :picker-props="{ elevation: 0, border: true }"
-          >
-            <template #label="{ label }"
-              ><span class="text-caption">{{ label }}</span></template
-            >
-          </VDateInput>
-          <v-select
-            v-model="status"
-            label="Estado"
-            :items="statusOptions"
-            clearable
-          >
-            <template #label="{ label }"
-              ><span class="text-caption">{{ label }}</span></template
-            >
-          </v-select>
-          <v-select
-            v-model="lineType"
-            label="Tipo de línea"
-            clearable
-            :items="lineOptions"
-          >
-            <template #label="{ label }"
-              ><span class="text-caption">{{ label }}</span></template
-            >
-          </v-select>
-          <v-btn
-            variant="text"
-            block
-            prepend-icon="mdi-filter-remove-outline"
-            @click="clearFilters"
-          >
-            Limpiar filtros
-          </v-btn>
-        </section>
+        </v-data-table-server>
       </v-col>
     </v-row>
   </v-card>
 
-  <v-dialog v-model="dialog" max-width="480">
+  <v-dialog v-model="dialog" :persistent="saving" max-width="480">
     <v-card v-if="selected" elevation="0" flat border title="Editar movimiento">
       <v-form @submit.prevent="save">
         <v-card-text>
+          <v-alert v-if="editError" type="error" class="mb-4">{{ editError }}</v-alert>
           <div class="mb-4">
             <p>
               {{ movementDate(selected.date) }} ·
@@ -508,13 +569,13 @@ function clearFilters() {
         </v-card-text>
         <v-card-actions>
           <v-spacer />
-          <v-btn @click="dialog = false">Cancelar</v-btn>
-          <v-btn color="primary" type="submit">Guardar</v-btn>
+          <v-btn :disabled="saving" @click="dialog = false">Cancelar</v-btn>
+          <v-btn color="primary" type="submit" :loading="saving">Guardar</v-btn>
         </v-card-actions>
       </v-form>
     </v-card>
   </v-dialog>
   <v-snackbar v-model="saved" timeout="3000"
-    >Movimiento actualizado localmente.</v-snackbar
+    >Movimiento actualizado.</v-snackbar
   >
 </template>
