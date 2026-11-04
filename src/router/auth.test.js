@@ -21,10 +21,23 @@ test("navigation waits for bootstrap, protects routes, and restores internal ret
     await navigation;
     assert.equal(router.currentRoute.value.path, "/login");
     assert.equal(router.currentRoute.value.query.next, "/casas");
+    await router.push("/");
+    assert.equal(router.currentRoute.value.path, "/login");
+    assert.equal(router.currentRoute.value.query.next, "/resumen");
     session.authenticated = true;
+    await router.push("/login");
+    assert.equal(router.currentRoute.value.path, "/resumen");
+    await router.push("/");
+    assert.equal(router.currentRoute.value.path, "/resumen");
+    await router.push("/unknown");
+    assert.equal(router.currentRoute.value.path, "/resumen");
+    for (const path of ["/movimientos", "/cargos", "/casas", "/tipos-de-cargo", "/tipos-de-gasto", "/resumen"]) {
+      await router.push(path);
+      assert.equal(router.currentRoute.value.path, path);
+    }
     await router.push("/login?next=/resumen");
     assert.equal(router.currentRoute.value.path, "/resumen");
     await router.push("/login?next=https://evil.test");
-    assert.equal(router.currentRoute.value.path, "/movimientos");
+    assert.equal(router.currentRoute.value.path, "/resumen");
   } finally { globalThis.fetch = originalFetch; clearSession(); }
 });

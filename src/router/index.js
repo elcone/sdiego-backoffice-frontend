@@ -11,7 +11,7 @@ import { safeReturnPath } from "../auth/navigation.js";
 
 export const routes = [
   { path: "/login", component: LoginView },
-  { path: "/", redirect: "/movimientos" },
+  { path: "/", redirect: "/resumen" },
   { path: "/movimientos", component: MovementsView },
   { path: "/resumen", component: SummaryView },
   { path: "/casas", component: HousesView },
@@ -26,7 +26,7 @@ export const routes = [
     component: CatalogView,
     props: { kind: "expense" },
   },
-  { path: "/:pathMatch(.*)*", redirect: "/movimientos" },
+  { path: "/:pathMatch(.*)*", redirect: "/resumen" },
 ];
 const router = createRouter({ history: createWebHistory(), routes });
 router.beforeEach(async to => {

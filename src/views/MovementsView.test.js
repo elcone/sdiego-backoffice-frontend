@@ -264,11 +264,13 @@ test("all search scopes preserve query, review and dates through server ordering
 
 test("import uploads ZIP, blocks duplicate submissions and refreshes list and summary", async () => {
   let release;
+  const summary = { can_import: true, latest_transaction_timestamp: "2026-10-29T05:41:14Z" };
   const { state, calls } = mount(async url => {
     if (url.endsWith("/import/")) return new Promise(resolve => { release = resolve; });
     return { count: 1, results: [bank] };
-  });
+  }, summary);
   await settle();
+  assert.equal(state.latestMovementLabel, "Movimientos hasta 28/10/2026");
   state.importFile = new Blob(["zip"]);
   const pending = state.importZip();
   await settle();
@@ -279,10 +281,12 @@ test("import uploads ZIP, blocks duplicate submissions and refreshes list and su
   assert.equal(upload.options.body instanceof FormData, true);
   assert.equal(upload.options.headers["Content-Type"], undefined);
   const before = calls.length;
+  summary.latest_transaction_timestamp = "2026-11-02T05:59:59Z";
   release({ found_count: 122, inserted_count: 0, skipped_count: 122 });
   await pending;
   assert.equal(state.importing, false);
   assert.equal(state.importResult.skipped_count, 122);
+  assert.equal(state.latestMovementLabel, "Movimientos hasta 01/11/2026");
   assert.equal(state.importFile, null);
   assert.equal(calls.slice(before).some(call => call.url.includes("/summary/")), true);
   assert.equal(calls.slice(before).some(call => call.url.startsWith("/api/bank-transaction/?")), true);
@@ -310,5 +314,18 @@ test("summary supplies import permission and the latest recorded bank timestamp"
   assert.equal(state.canChange, false);
   assert.equal(state.latestTransaction, bank.transaction_timestamp);
   assert.match(descriptor.template.content, /v-if="canImport"/);
-  assert.match(descriptor.template.content, /Último movimiento registrado/);
+  assert.match(descriptor.template.content, /latestMovementLabel/);
+});
+
+
+test("bank subtitle uses the stored maximum in Mexico City and handles no movements", async () => {
+  const { state } = mount(undefined, { latest_transaction_timestamp: "2026-01-01T05:59:59Z" });
+  await settle();
+  assert.equal(state.latestMovementLabel, "Movimientos hasta 31/12/2025");
+  state.latestTransaction = "2026-01-01T06:00:00Z";
+  assert.equal(state.latestMovementLabel, "Movimientos hasta 01/01/2026");
+  state.latestTransaction = "2021-07-01T05:00:00Z";
+  assert.equal(state.latestMovementLabel, "Movimientos hasta 01/07/2021");
+  state.latestTransaction = null;
+  assert.equal(state.latestMovementLabel, "Sin movimientos");
 });

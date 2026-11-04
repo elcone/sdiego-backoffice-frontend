@@ -291,3 +291,28 @@ test("charges collect every API page in order and retain table pagination at 50"
   assert.equal(state.page, 3);
   assert.deepEqual(state.filteredCharges, apiRows);
 });
+
+for (const [kind, label] of [["charge", "Nuevo tipo de cargo"], ["expense", "Nuevo tipo de gasto"]]) {
+  test(`${kind} catalog FAB is accessible, circular and opens the creation action`, () => {
+    const fabTemplate = components.CatalogView.template.match(/<v-fab[\s\S]*?<\/v-fab>/)[0];
+    const render = new Function("Vue", compile(fabTemplate, { mode: "function" }).code)(Vue);
+    let opened = 0;
+    const fab = render({ props: { kind }, open: () => { opened++; } }, []);
+    assert.equal(fab.props.icon, "");
+    assert.equal(fab.props.size, "56");
+    assert.equal(fab.props.color, "primary");
+    assert.equal(fab.props.elevation, "4");
+    assert.equal(fab.props.location, "bottom end");
+    assert.equal(fab.props.extended, undefined);
+    assert.equal(fab.props.layout, "");
+    fab.props.onClick();
+    assert.equal(opened, 1);
+    const contents = Array.isArray(fab.children) ? fab.children : fab.children.default();
+    assert.equal(contents.find(node => node.type === "v-icon").props.icon, "mdi-plus");
+    const tooltip = contents.find(node => node.type === "v-tooltip");
+    assert.equal(tooltip.props.text, label);
+    assert.equal(tooltip.props.activator, "parent");
+    assert.equal(tooltip.props["activator-props"]["aria-label"], label);
+    assert.equal(components.CatalogView.template.includes('>Nuevo tipo</v-btn>'), false);
+  });
+}

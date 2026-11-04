@@ -49,6 +49,8 @@ test("reliable CSRF errors preserve active session", async () => {
   assert.equal(session.authenticated, true);
 });
 test("return paths allow only existing internal administrative routes", () => {
-  for (const value of ["https://evil.test", "//evil.test", "/\\evil.test", "/login", "/missing", ["/casas"], "/casas\n"]) assert.equal(safeReturnPath(value), "/movimientos");
+  for (const value of ["https://evil.test", "//evil.test", "/\\evil.test", "/login", "/missing", ["/casas"], "/casas\n"]) assert.equal(safeReturnPath(value), "/resumen");
+  assert.equal(safeReturnPath(undefined), "/resumen");
+  assert.equal(safeReturnPath("/movimientos"), "/movimientos");
   assert.equal(safeReturnPath("/casas?activo=1#detalle"), "/casas?activo=1#detalle");
 });

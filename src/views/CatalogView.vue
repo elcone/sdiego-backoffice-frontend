@@ -67,10 +67,27 @@ onBeforeUnmount(() => { listRequest++; });
 </script>
 
 <template>
+  <v-fab
+    app
+    layout
+    icon
+    location="bottom end"
+    color="primary"
+    size="56"
+    elevation="4"
+    class="treasury-fab"
+    @click="open()"
+  >
+    <v-icon icon="mdi-plus" />
+    <v-tooltip
+      activator="parent"
+      :text="props.kind === 'charge' ? 'Nuevo tipo de cargo' : 'Nuevo tipo de gasto'"
+      :activator-props="{ 'aria-label': props.kind === 'charge' ? 'Nuevo tipo de cargo' : 'Nuevo tipo de gasto' }"
+    />
+  </v-fab>
   <v-card flat border>
     <v-card-text class="d-flex flex-wrap align-center justify-space-between ga-2">
       <h1 class="text-h6">{{ props.kind === "charge" ? "Tipos de cargo" : "Tipos de gasto" }}</h1>
-      <v-btn color="primary" variant="flat" prepend-icon="mdi-plus" @click="open()">Nuevo tipo</v-btn>
     </v-card-text>
     <v-divider />
     <v-alert v-if="error" type="error" variant="tonal">{{ error }}
@@ -105,3 +122,9 @@ onBeforeUnmount(() => { listRequest++; });
     </v-card>
   </v-dialog>
 </template>
+
+<style scoped>
+.treasury-fab :deep(.v-fab__container) {
+  margin: 24px;
+}
+</style>

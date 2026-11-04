@@ -86,6 +86,12 @@ const selectedSearchScope = computed(() =>
   searchScopes.find(scope => scope.value === searchScope.value),
 );
 
+const bankDateFormatter = new Intl.DateTimeFormat("es-MX", {
+  timeZone: "America/Mexico_City", day: "2-digit", month: "2-digit", year: "numeric",
+});
+const latestMovementLabel = computed(() => latestTransaction.value
+  ? `Movimientos hasta ${bankDateFormatter.format(new Date(latestTransaction.value))}`
+  : "Sin movimientos");
 const dateFormatter = new Intl.DateTimeFormat("es-MX");
 const timeFormatter = new Intl.DateTimeFormat("es-MX", {
   hour: "2-digit",
@@ -299,7 +305,7 @@ function clearFilters() {
       <div class="d-flex flex-wrap align-center justify-space-between ga-2">
         <div>
           <h1 class="text-h6">Movimientos bancarios</h1>
-          <div class="text-caption text-medium-emphasis">Último movimiento registrado: {{ latestTransaction ? `${movementDate(latestTransaction)} ${movementTime(latestTransaction)}` : "Sin movimientos" }}</div>
+          <div class="text-caption text-medium-emphasis">{{ latestMovementLabel }}</div>
         </div>
         <div class="d-flex flex-wrap align-center ga-2">
           <v-btn-toggle
