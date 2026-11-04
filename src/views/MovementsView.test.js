@@ -38,12 +38,12 @@ const bank = {
   description: "Nota", is_reviewed: false,
   transaction_timestamp: "2026-02-02T12:00:00Z", amount: "100.00", concept: "Cuota",
 };
-function mount(respond = () => ({ count: 101, results: [bank] })) {
+function mount(respond = () => ({ count: 101, results: [bank] }), summary = { can_change: true }) {
   globalThis.document = { cookie: "csrftoken=local-test" };
   const calls = [];
   globalThis.fetch = async (url, options) => {
     calls.push({ url, options });
-    const data = url.includes("/summary/") ? { can_change: true } : await respond(url, options);
+    const data = url.includes("/summary/") ? summary : await respond(url, options);
     return { ok: true, json: async () => data };
   };
   app = renderer.createApp({ ...MovementsView, render: () => null });
@@ -260,4 +260,55 @@ test("all search scopes preserve query, review and dates through server ordering
       }
     }
   }
+});
+
+test("import uploads ZIP, blocks duplicate submissions and refreshes list and summary", async () => {
+  let release;
+  const { state, calls } = mount(async url => {
+    if (url.endsWith("/import/")) return new Promise(resolve => { release = resolve; });
+    return { count: 1, results: [bank] };
+  });
+  await settle();
+  state.importFile = new Blob(["zip"]);
+  const pending = state.importZip();
+  await settle();
+  assert.equal(state.importing, true);
+  await state.importZip();
+  assert.equal(calls.filter(call => call.url.endsWith("/import/")).length, 1);
+  const upload = calls.find(call => call.url.endsWith("/import/"));
+  assert.equal(upload.options.body instanceof FormData, true);
+  assert.equal(upload.options.headers["Content-Type"], undefined);
+  const before = calls.length;
+  release({ found_count: 122, inserted_count: 0, skipped_count: 122 });
+  await pending;
+  assert.equal(state.importing, false);
+  assert.equal(state.importResult.skipped_count, 122);
+  assert.equal(state.importFile, null);
+  assert.equal(calls.slice(before).some(call => call.url.includes("/summary/")), true);
+  assert.equal(calls.slice(before).some(call => call.url.startsWith("/api/bank-transaction/?")), true);
+});
+
+test("import failure stays visible and does not refresh or claim success", async () => {
+  const { state, calls } = mount();
+  await settle();
+  state.importFile = new Blob(["zip"]);
+  globalThis.fetch = async () => ({ ok: false, status: 409, json: async () => ({ detail: "Conflicto bancario. No se insertó ningún movimiento.", errors: [{ row: 4, fields: ["concept"] }] }) });
+  const before = calls.length;
+  await state.importZip();
+  assert.equal(state.importing, false);
+  assert.equal(state.importResult, null);
+  assert.match(state.importError, /Conflicto bancario/);
+  assert.match(state.importError, /Fila 4: concepto/);
+  assert.equal(calls.length, before);
+});
+
+
+test("summary supplies import permission and the latest recorded bank timestamp", async () => {
+  const { state } = mount(undefined, { can_change: false, can_import: true, latest_transaction_timestamp: bank.transaction_timestamp });
+  await settle();
+  assert.equal(state.canImport, true);
+  assert.equal(state.canChange, false);
+  assert.equal(state.latestTransaction, bank.transaction_timestamp);
+  assert.match(descriptor.template.content, /v-if="canImport"/);
+  assert.match(descriptor.template.content, /Último movimiento registrado/);
 });

@@ -3,7 +3,7 @@ import { checkSession, currentCsrfToken, expireSession } from "../auth/session.j
 export async function request(url, options = {}) {
   const token = currentCsrfToken();
   const response = await fetch(url, { credentials: "same-origin", ...options,
-    headers: { Accept: "application/json", ...(options.body ? { "Content-Type": "application/json" } : {}), ...(!["GET", "HEAD", "OPTIONS"].includes((options.method || "GET").toUpperCase()) ? { "X-CSRFToken": token || "" } : {}) },
+    headers: { Accept: "application/json", ...(options.body && !(options.body instanceof FormData) ? { "Content-Type": "application/json" } : {}), ...(!["GET", "HEAD", "OPTIONS"].includes((options.method || "GET").toUpperCase()) ? { "X-CSRFToken": token || "" } : {}) },
   });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
@@ -24,7 +24,13 @@ export async function request(url, options = {}) {
         : data.detail ? "No tiene permisos para realizar esta operación."
           : "La solicitud fue rechazada. La sesión sigue activa.");
     }
-    throw new Error(`No se pudo completar la solicitud. ${Object.values(data).flat().join(" ")}`);
+    const bankLabels = { transaction_timestamp: "fecha y hora", amount: "importe", account_balance: "saldo", concept: "concepto" };
+    const details = Array.isArray(data.errors)
+      ? data.errors.map(item => `Fila ${item.row}: ${item.message || (item.fields || []).map(field => bankLabels[field] || field).join(", ")}`).join("; ") : "";
+    const error = new Error(`No se pudo completar la solicitud. ${data.detail || Object.values(data).flat().filter(value => typeof value === "string").join(" ")} ${details}`.trim());
+    error.status = response.status;
+    error.data = data;
+    throw error;
   }
   return response.status === 204 ? null : response.json();
 }

@@ -62,3 +62,21 @@ test("DELETE sends CSRF without a body and accepts an empty 204 response", async
   };
   assert.equal(await request("/api/expense-type/3/", { method: "DELETE" }), null);
 });
+
+test("ZIP upload keeps multipart boundary generation and CSRF; conflict details survive", async () => {
+  globalThis.document = { cookie: "csrftoken=upload-token" };
+  const body = new FormData();
+  body.append("file", new Blob(["zip"]), "bank.zip");
+  globalThis.fetch = async (url, options) => {
+    assert.equal(options.body, body);
+    assert.equal(options.headers["Content-Type"], undefined);
+    assert.equal(options.headers["X-CSRFToken"], "upload-token");
+    return { ok: false, status: 409, json: async () => ({ detail: "No se insertó ningún movimiento.", errors: [{ row: 3, fields: ["amount"] }], inserted_count: 0 }) };
+  };
+  await assert.rejects(request("/api/bank-transaction/import/", { method: "POST", body }), error => {
+    assert.equal(error.status, 409);
+    assert.equal(error.data.inserted_count, 0);
+    assert.match(error.message, /Fila 3: importe/);
+    return true;
+  });
+});

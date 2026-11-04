@@ -7,6 +7,33 @@ const movements = ref([]);
 const houses = ref([]);
 const expenseTypes = ref([]);
 const canChange = ref(false);
+const canImport = ref(false);
+const latestTransaction = ref(null);
+const importDialog = ref(false);
+const importFile = ref(null);
+const importing = ref(false);
+const importError = ref("");
+const importResult = ref(null);
+async function importZip() {
+  if (importing.value) return;
+  const file = Array.isArray(importFile.value) ? importFile.value[0] : importFile.value;
+  if (!file) { importError.value = "Seleccione un archivo ZIP."; return; }
+  importing.value = true;
+  importError.value = "";
+  importResult.value = null;
+  try {
+    const body = new FormData();
+    body.append("file", file);
+    importResult.value = await request("/api/bank-transaction/import/", { method: "POST", body });
+    importFile.value = null;
+    page.value = 1;
+    await load();
+  } catch (failure) {
+    importError.value = failure.message;
+  } finally {
+    importing.value = false;
+  }
+}
 const loading = ref(false);
 const error = ref("");
 const editError = ref("");
@@ -149,12 +176,15 @@ async function load() {
     movements.value = data.results.map(mapMovement);
     count.value = data.count;
     canChange.value = summary.can_change;
+    canImport.value = summary.can_import;
+    latestTransaction.value = summary.latest_transaction_timestamp;
   } catch (failure) {
     if (current !== listRequest) return;
     error.value = failure.message;
     movements.value = [];
     count.value = 0;
     canChange.value = false;
+    canImport.value = false;
   } finally {
     if (current === listRequest) loading.value = false;
   }
@@ -235,11 +265,29 @@ function clearFilters() {
 </script>
 
 <template>
+  <v-dialog v-model="importDialog" max-width="560" :persistent="importing">
+    <v-card title="Importar ZIP bancario">
+      <v-card-text>
+        <v-file-input v-model="importFile" label="Archivo ZIP de BanBajío" accept=".zip,application/zip" :disabled="importing" show-size />
+        <v-progress-linear v-if="importing" indeterminate aria-label="Procesando importación" />
+        <v-alert v-if="importError" type="error" class="mt-3">{{ importError }}</v-alert>
+        <v-alert v-if="importResult" type="success" class="mt-3">Encontrados: {{ importResult.found_count }}. Insertados: {{ importResult.inserted_count }}. Omitidos: {{ importResult.skipped_count }}.</v-alert>
+      </v-card-text>
+      <v-card-actions>
+        <v-btn :disabled="importing" @click="importDialog = false">Cerrar</v-btn>
+        <v-btn color="primary" :loading="importing" :disabled="!importFile || importing" @click="importZip">Importar</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
   <v-card flat border>
     <v-card-text role="group" aria-label="Encabezado de movimientos">
       <div class="d-flex flex-wrap align-center justify-space-between ga-2">
-        <h1 class="text-h6">Movimientos bancarios</h1>
+        <div>
+          <h1 class="text-h6">Movimientos bancarios</h1>
+          <div class="text-caption text-medium-emphasis">Último movimiento registrado: {{ latestTransaction ? `${movementDate(latestTransaction)} ${movementTime(latestTransaction)}` : "Sin movimientos" }}</div>
+        </div>
         <div class="d-flex flex-wrap align-center ga-2">
+          <v-btn v-if="canImport" prepend-icon="mdi-upload" variant="outlined" @click="importDialog = true">Importar ZIP</v-btn>
           <v-btn-toggle
             v-model="tab"
             divided
