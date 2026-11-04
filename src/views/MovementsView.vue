@@ -265,6 +265,21 @@ function clearFilters() {
 </script>
 
 <template>
+  <v-fab
+    v-if="canImport"
+    app
+    layout
+    icon
+    location="bottom end"
+    color="primary"
+    size="56"
+    elevation="4"
+    class="treasury-fab"
+    @click="importDialog = true"
+  >
+    <v-icon icon="mdi-upload" />
+    <v-tooltip activator="parent" text="Importar ZIP" :activator-props="{ 'aria-label': 'Importar ZIP' }" />
+  </v-fab>
   <v-dialog v-model="importDialog" max-width="560" :persistent="importing">
     <v-card title="Importar ZIP bancario">
       <v-card-text>
@@ -287,7 +302,6 @@ function clearFilters() {
           <div class="text-caption text-medium-emphasis">Último movimiento registrado: {{ latestTransaction ? `${movementDate(latestTransaction)} ${movementTime(latestTransaction)}` : "Sin movimientos" }}</div>
         </div>
         <div class="d-flex flex-wrap align-center ga-2">
-          <v-btn v-if="canImport" prepend-icon="mdi-upload" variant="outlined" @click="importDialog = true">Importar ZIP</v-btn>
           <v-btn-toggle
             v-model="tab"
             divided
@@ -627,3 +641,9 @@ function clearFilters() {
     >Movimiento actualizado.</v-snackbar
   >
 </template>
+
+<style scoped>
+.treasury-fab :deep(.v-fab__container) {
+  margin: 24px;
+}
+</style>

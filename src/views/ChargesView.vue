@@ -116,6 +116,20 @@ function open() {
 </script>
 
 <template>
+  <v-fab
+    app
+    layout
+    icon
+    location="bottom end"
+    color="primary"
+    size="56"
+    elevation="4"
+    class="treasury-fab"
+    @click="open"
+  >
+    <v-icon icon="mdi-plus" />
+    <v-tooltip activator="parent" text="Nuevo cargo" :activator-props="{ 'aria-label': 'Nuevo cargo' }" />
+  </v-fab>
   <v-card flat border>
     <v-card-text>
       <div class="d-flex align-center justify-space-between ga-3 mb-4">
@@ -133,13 +147,6 @@ function open() {
               </template>
             </v-tooltip>
           </v-btn-group>
-          <v-btn
-            color="primary"
-            variant="flat"
-            prepend-icon="mdi-plus"
-            @click="open"
-            >Nuevo cargo</v-btn
-          >
         </div>
       </div>
       <v-row v-show="searchOpen" id="charge-search" class="mt-2" dense>
@@ -239,3 +246,9 @@ function open() {
   </v-dialog>
   <v-snackbar v-model="saved" timeout="3000">{{ resultMessage }}</v-snackbar>
 </template>
+
+<style scoped>
+.treasury-fab :deep(.v-fab__container) {
+  margin: 24px;
+}
+</style>
