@@ -51,13 +51,13 @@ const links = [
       <v-list-item
         title="Tipos de cargo"
         to="/tipos-de-cargo"
-        prepend-icon="mdi-format-list-bulleted"
+        prepend-icon="mdi-tag-arrow-right-outline"
         color="primary"
       />
       <v-list-item
         title="Tipos de gasto"
         to="/tipos-de-gasto"
-        prepend-icon="mdi-tag-outline"
+        prepend-icon="mdi-tag-arrow-left-outline"
         color="primary"
       />
     </v-list>
