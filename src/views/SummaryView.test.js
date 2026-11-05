@@ -22,7 +22,7 @@ let app;
 afterEach(() => { app?.unmount(); globalThis.fetch = originalFetch; delete globalThis.document; });
 const settle = async () => { await nextTick(); await delay(0); };
 const data = {
-  income: "1300.25", expense: "-255.16", receivable: "400.00", pending_expenses: "-20.00",
+  unrecognized_income: "1234.56", income: "1300.25", expense: "-255.16", receivable: "400.00", pending_expenses: "-20.00",
   top_houses: Array.from({ length: 10 }, (_, index) => ({ number: 6101 + index, balance: String(100 - index) + ".00" })),
   top_expenses: [],
 };
@@ -53,7 +53,7 @@ test("loads real aggregates and existing bank balance without paginated lists or
   assert.equal(state.money(state.bankBalance), "$1,045.09");
 });
 test("handles empty real results and formats zero without inventing entries", async () => {
-  const empty = { income: "0.00", expense: "0.00", receivable: "0.00", pending_expenses: "0.00", top_houses: [], top_expenses: [] };
+  const empty = { unrecognized_income: "0.00", income: "0.00", expense: "0.00", receivable: "0.00", pending_expenses: "0.00", top_houses: [], top_expenses: [] };
   const { state } = mount(url => url === "/api/summary/" ? empty : { balance: "0.00" });
   await settle();
   assert.deepEqual(state.summary, empty);
@@ -102,7 +102,7 @@ test("layout uses responsive columns, equal metric cards, and a large plain bank
   assert.equal(bank.includes("<v-card"), false);
   assert.equal(bank.includes("<v-icon"), false);
   assert.equal((template.match(/<v-col cols="12" md="6">/g) || []).length, 2);
-  assert.equal((template.match(/<v-card flat border height="100%">/g) || []).length, 4);
+  assert.equal((template.match(/<v-card flat border height="100%">/g) || []).length, 5);
   assert.equal((template.match(/hide-default-footer/g) || []).length, 2);
   assert.equal((template.match(/:items-per-page="-1"/g) || []).length, 2);
   assert.equal(template.includes("<v-btn"), false);
@@ -175,4 +175,28 @@ test("expense ranking preserves backend order and positive monetary values", asy
   assert.equal(state.money(state.summary.top_expenses[0].total), "$1,000.50");
   assert.equal(state.money(state.summary.top_expenses[1].total), "$250.25");
   assert.equal(state.summary.expense, "-255.16");
+});
+
+
+test("unrecognized income follows receivable in three equal responsive income cards", async () => {
+  const { state } = mount();
+  await settle();
+  assert.equal(state.summary.unrecognized_income, "1234.56");
+  const template = descriptor.template.content;
+  const row = template.match(/<v-row class="mb-3">([\s\S]*?)<\/v-row>/)[1];
+  assert.equal((row.match(/<v-col cols="12" sm="4">/g) || []).length, 3);
+  assert.deepEqual([...row.matchAll(/<h3[^>]*>([^<]+)<\/h3>/g)].map(match => match[1]), [
+    "Ingresos del mes", "Saldo por cobrar", "Ingresos no reconocidos",
+  ]);
+  const title = row.indexOf("Ingresos no reconocidos");
+  const card = row.slice(row.lastIndexOf("<v-card ", title), row.indexOf("</v-card>", title) + "</v-card>".length);
+  const render = new Function("Vue", compile(card, { mode: "function" }).code)(Vue);
+  for (const [amount, expected] of [["1234.56", "$1,234.56"], ["0.00", "$0.00"]]) {
+    const vnode = render({ summary: { unrecognized_income: amount }, money: state.money });
+    const output = JSON.stringify(vnode, (key, value) =>
+      key === "default" && typeof value === "function" ? value() : value,
+    );
+    assert.ok(output.includes(expected));
+    assert.ok(output.includes("Ingresos no reconocidos"));
+  }
 });

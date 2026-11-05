@@ -56,7 +56,7 @@ onBeforeUnmount(() => { currentRequest++; });
       <v-col cols="12" md="6">
         <h2 class="text-h6 mb-3">Ingresos</h2>
         <v-row class="mb-3">
-          <v-col cols="12" sm="6">
+          <v-col cols="12" sm="4">
             <v-card flat border height="100%">
               <v-card-text>
                 <h3 class="text-body-2 text-medium-emphasis mb-1">Ingresos del mes</h3>
@@ -64,11 +64,19 @@ onBeforeUnmount(() => { currentRequest++; });
               </v-card-text>
             </v-card>
           </v-col>
-          <v-col cols="12" sm="6">
+          <v-col cols="12" sm="4">
             <v-card flat border height="100%">
               <v-card-text>
                 <h3 class="text-body-2 text-medium-emphasis mb-1">Saldo por cobrar</h3>
                 <p class="text-h6">{{ money(summary.receivable) }}</p>
+              </v-card-text>
+            </v-card>
+          </v-col>
+          <v-col cols="12" sm="4">
+            <v-card flat border height="100%">
+              <v-card-text>
+                <h3 class="text-body-2 text-medium-emphasis mb-1">Ingresos no reconocidos</h3>
+                <p class="text-h6">{{ money(summary.unrecognized_income) }}</p>
               </v-card-text>
             </v-card>
           </v-col>
