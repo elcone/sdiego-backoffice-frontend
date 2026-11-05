@@ -75,7 +75,7 @@ onBeforeUnmount(() => { currentRequest++; });
           <v-col cols="12" sm="4">
             <v-card flat border height="100%">
               <v-card-text>
-                <h3 class="text-body-2 text-medium-emphasis mb-1">Ingresos no reconocidos</h3>
+                <h3 class="text-body-2 text-medium-emphasis mb-1">Ingresos sin identificar</h3>
                 <p class="text-h6">{{ money(summary.unrecognized_income) }}</p>
               </v-card-text>
             </v-card>
