@@ -183,7 +183,7 @@ function open() {
       }}</template>
       <template #item.period="{ item }">{{ dateLabel(item.period) }}</template>
       <template #item.due_date="{ item }">{{
-        dateLabel(item.due_date)
+        item.due_date ? dateLabel(item.due_date) : ""
       }}</template>
       <template #item.amount="{ item }"
         >{{ item.amount > 0 ? "+" : "" }}{{ money(item.amount) }}</template
@@ -232,7 +232,8 @@ function open() {
         />
         <VDateInput
           v-model="draft.dueDate"
-          label="Vencimiento"
+          :label="draft.mode === 'individual' ? 'Vencimiento (opcional)' : 'Vencimiento'"
+          clearable
           input-format="dd/mm/yyyy"
           :picker-props="{ elevation: 0, border: true }"
         />

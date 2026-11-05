@@ -316,3 +316,30 @@ for (const [kind, label] of [["charge", "Nuevo tipo de cargo"], ["expense", "Nue
     assert.equal(components.CatalogView.template.includes('>Nuevo tipo</v-btn>'), false);
   });
 }
+
+
+test("individual charges submit unrestricted dates and an empty due date as null", async () => {
+  const { state, calls } = mount("ChargesView");
+  await settle();
+  state.open();
+  Object.assign(state.draft, {
+    mode: "individual", house: 7, chargeType: 3, amount: "100.00",
+    period: new Date(2026, 10, 19), dueDate: null,
+  });
+  await state.save();
+  const write = calls.find(call => call.options.method === "POST");
+  assert.equal(write.url, "/api/charge/");
+  const payload = JSON.parse(write.options.body);
+  assert.equal(payload.period, "2026-11-19");
+  assert.equal(payload.due_date, null);
+});
+
+test("due date cells leave missing dates empty and format existing dates", () => {
+  const slot = components.ChargesView.template.match(/<template #item\.due_date="{ item }">([\s\S]*?)<\/template>/);
+  assert.ok(slot);
+  const render = new Function("Vue", compile(slot[1], { mode: "function" }).code)(Vue);
+  for (const due_date of [null, undefined, ""]) {
+    assert.equal(render({ item: { due_date }, dateLabel() { throw new Error("Invalid date"); } }), "");
+  }
+  assert.equal(render({ item: { due_date: "2026-11-15" }, dateLabel: date => `Fecha ${date}` }), "Fecha 2026-11-15");
+});
