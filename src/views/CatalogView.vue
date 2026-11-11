@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { catalog, request } from "../api/movements";
 const props = defineProps({ kind: { type: String, required: true } });
 const page = ref(1);
@@ -8,16 +8,17 @@ const loading = ref(false);
 const error = ref("");
 const dialog = ref(false);
 const selected = ref(null);
-const draft = reactive({ name: "" });
+const draft = reactive({ name: "", isActive: true });
 const saving = ref(false);
 const saveError = ref("");
 let listRequest = 0;
 const endpoint = () => props.kind === "charge" ? "charge-type" : "expense-type";
-const headers = [
+const headers = computed(() => [
   { title: "ID", key: "id" },
   { title: "Nombre", key: "name" },
+  ...(props.kind === "charge" ? [{ title: "Estado", key: "is_active" }] : []),
   { title: "Acciones", key: "actions", sortable: false },
-];
+]);
 async function load() {
   const current = ++listRequest;
   loading.value = true;
@@ -34,6 +35,7 @@ async function load() {
 function open(item = null) {
   selected.value = item;
   draft.name = item?.name || "";
+  draft.isActive = item?.is_active !== false;
   saveError.value = "";
   dialog.value = true;
 }
@@ -44,7 +46,7 @@ async function save() {
   try {
     await request(`/api/${endpoint()}/${selected.value ? selected.value.id + "/" : ""}`, {
       method: selected.value ? "PATCH" : "POST",
-      body: JSON.stringify({ name: draft.name }),
+      body: JSON.stringify({ name: draft.name, ...(props.kind === "charge" ? { is_active: draft.isActive } : {}) }),
     });
     dialog.value = false;
     await load();
@@ -95,6 +97,9 @@ onBeforeUnmount(() => { listRequest++; });
       <v-btn variant="text" @click="load">Reintentar</v-btn>
     </v-alert>
     <v-data-table :headers="headers" :items="rows" v-model:page="page" :items-per-page="50" :items-per-page-options="[50]" :loading="loading" no-data-text="No se encontraron tipos">
+      <template #item.is_active="{ item }">
+        {{ item.is_active === false ? "Inactivo" : "Activo" }}
+      </template>
       <template #item.actions="{ item }">
         <v-tooltip text="Editar">
           <template #activator="{ props: buttonProps }">
@@ -114,6 +119,7 @@ onBeforeUnmount(() => { listRequest++; });
       <v-card-text>
         <v-alert v-if="saveError" type="error" variant="tonal" class="mb-4">{{ saveError }}</v-alert>
         <v-text-field v-model="draft.name" label="Nombre" />
+        <v-switch v-if="props.kind === 'charge'" v-model="draft.isActive" label="Activo" />
       </v-card-text>
       <v-card-actions>
         <v-spacer />

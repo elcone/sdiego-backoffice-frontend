@@ -11,6 +11,7 @@ const searchOpen = ref(false);
 const charges = ref([]);
 const houses = ref([]);
 const chargeTypes = ref([]);
+const activeChargeTypes = computed(() => chargeTypes.value.filter((type) => type.is_active === true));
 const loading = ref(false);
 const error = ref("");
 const saving = ref(false);
@@ -223,7 +224,7 @@ defineExpose({ open });
         <v-select
           v-model="draft.chargeType"
           label="Tipo de cargo"
-          :items="chargeTypes"
+          :items="activeChargeTypes"
           item-title="name"
           item-value="id"
         />

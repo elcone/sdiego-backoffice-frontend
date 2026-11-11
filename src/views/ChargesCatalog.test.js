@@ -30,7 +30,7 @@ let app;
 afterEach(() => { app?.unmount(); globalThis.fetch = originalFetch; delete globalThis.document; });
 const settle = async () => { await nextTick(); await delay(0); };
 const houses = [{ id: 7, number: 6101 }, { id: 8, number: 6102 }];
-const types = [{ id: 3, name: "Cuota" }];
+const types = [{ id: 3, name: "Cuota", is_active: true }];
 const rows = [
   { id: 1, house: 7, charge_type: 3, amount: "-12.35", period: "2026-11-01", due_date: "2026-11-15", description: "Ajuste de mantenimiento" },
   { id: 2, house: 8, charge_type: 3, amount: "15.00", period: "2026-10-01", due_date: "2026-10-15" },
@@ -108,13 +108,14 @@ for (const [kind, endpoint] of [["charge", "charge-type"], ["expense", "expense-
     await state.save();
     let write = calls.find(call => call.options.method === "POST");
     assert.equal(write.url, `/api/${endpoint}/`);
-    assert.deepEqual(JSON.parse(write.options.body), { name: "Nuevo" });
+    assert.deepEqual(JSON.parse(write.options.body), { name: "Nuevo", ...(kind === "charge" ? { is_active: true } : {}) });
     state.open(types[0]);
     state.draft.name = "Editado";
+    state.draft.isActive = false;
     await state.save();
     write = calls.find(call => call.options.method === "PATCH");
     assert.equal(write.url, `/api/${endpoint}/3/`);
-    assert.deepEqual(JSON.parse(write.options.body), { name: "Editado" });
+    assert.deepEqual(JSON.parse(write.options.body), { name: "Editado", ...(kind === "charge" ? { is_active: false } : {}) });
     globalThis.fetch = async (url, options) => {
       calls.push({ url, options });
       return options.method === "DELETE" ? { ok: true, status: 204 } :
@@ -413,3 +414,59 @@ function tablePagination(state, items) {
   paginationApp.mount({});
   return { pager: paginationApp._instance.setupState, close: () => paginationApp.unmount() };
 }
+
+
+for (const house of [null, houses[1]]) {
+  test(`new charge options contain only active types with house ${house?.id ?? "all"} while history retains inactive labels`, async () => {
+    const inactive = { id: 4, name: "Cuota anterior", is_active: false };
+    const allTypes = [...types, inactive];
+    const historical = { ...rows[0], charge_type: inactive.id };
+    const { state } = mount("ChargesView", { house }, url => ({
+      results: url.startsWith("/api/charge-type/") ? allTypes
+        : url.startsWith("/api/house/") ? houses : [historical],
+    }));
+    await settle();
+    assert.deepEqual(state.chargeTypes, allTypes);
+    assert.deepEqual(state.activeChargeTypes, types);
+    state.open();
+    assert.equal(state.draft.mode, house ? "individual" : "all");
+    const select = components.ChargesView.template.match(/<v-select\s+v-model="draft.chargeType"[\s\S]*?\/>/)[0];
+    const render = new Function("Vue", compile(select, { mode: "function" }).code)(Vue);
+    assert.deepEqual(render(state).props.items, types);
+    state.draft.mode = "individual";
+    assert.deepEqual(render(state).props.items, types);
+    assert.equal(state.chargeTypeName(inactive.id), inactive.name);
+    if (!house) {
+      state.search = "cuota anterior";
+      assert.deepEqual(state.filteredCharges, [historical]);
+    }
+  });
+}
+
+test("charge catalog displays inactive state, opens it unchanged and supports reactivation", async () => {
+  const inactive = { ...types[0], is_active: false };
+  const { state, calls } = mount("CatalogView", { kind: "charge" }, () => ({ results: [inactive] }));
+  await settle();
+  assert.ok(state.headers.some(header => header.key === "is_active"));
+  const slot = components.CatalogView.template.match(/<template #item\.is_active="{ item }">([\s\S]*?)<\/template>/)[1];
+  const render = new Function("Vue", compile(slot, { mode: "function" }).code)(Vue);
+  assert.equal(render({ item: inactive }).trim(), "Inactivo");
+  assert.equal(render({ item: types[0] }).trim(), "Activo");
+  state.open(inactive);
+  assert.equal(state.draft.isActive, false);
+  state.draft.isActive = true;
+  await state.save();
+  const write = calls.find(call => call.options.method === "PATCH");
+  assert.deepEqual(JSON.parse(write.options.body), { name: inactive.name, is_active: true });
+  state.open();
+  assert.equal(state.draft.isActive, true);
+});
+
+test("expense catalog keeps its original fields and hides the active control", async () => {
+  const { state } = mount("CatalogView", { kind: "expense" });
+  await settle();
+  assert.equal(state.headers.some(header => header.key === "is_active"), false);
+  const control = components.CatalogView.template.match(/<v-switch[^>]*\/>/)[0];
+  const render = new Function("Vue", compile(control, { mode: "function" }).code)(Vue);
+  assert.equal(render({ props: { kind: "expense" }, draft: state.draft }).type, Vue.Comment);
+});
