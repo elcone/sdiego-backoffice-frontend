@@ -2,6 +2,7 @@
 import { onBeforeUnmount, reactive, ref, watch } from "vue";
 import { catalog, request } from "../api/movements";
 const props = defineProps({ kind: { type: String, required: true } });
+const page = ref(1);
 const rows = ref([]);
 const loading = ref(false);
 const error = ref("");
@@ -62,7 +63,7 @@ async function remove(item) {
     error.value = failure.message;
   }
 }
-watch(() => props.kind, () => { dialog.value = false; load(); }, { immediate: true });
+watch(() => props.kind, () => { dialog.value = false; page.value = 1; load(); }, { immediate: true });
 onBeforeUnmount(() => { listRequest++; });
 </script>
 
@@ -93,7 +94,7 @@ onBeforeUnmount(() => { listRequest++; });
     <v-alert v-if="error" type="error" variant="tonal">{{ error }}
       <v-btn variant="text" @click="load">Reintentar</v-btn>
     </v-alert>
-    <v-data-table :headers="headers" :items="rows" :items-per-page="10" :loading="loading" no-data-text="No se encontraron tipos">
+    <v-data-table :headers="headers" :items="rows" v-model:page="page" :items-per-page="50" :items-per-page-options="[50]" :loading="loading" no-data-text="No se encontraron tipos">
       <template #item.actions="{ item }">
         <v-tooltip text="Editar">
           <template #activator="{ props: buttonProps }">

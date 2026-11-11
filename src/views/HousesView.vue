@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { request } from "../api/movements";
+import ChargesView from "./ChargesView.vue";
 import { dateLabel } from "../data/mock";
 
 const currency = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
@@ -13,6 +14,11 @@ function money(value) {
   return `${text.startsWith("-") ? "-" : ""}${formatted}`;
 }
 
+const page = ref(1);
+const chargeForm = ref(null);
+async function chargeSaved() {
+  await Promise.all([open(selected.value), load()]);
+}
 const search = ref("");
 const searchOpen = ref(false);
 const houses = ref([]);
@@ -93,7 +99,8 @@ async function open(item) {
     if (current === statementRequest) statementLoading.value = false;
   }
 }
-watch(search, load, { immediate: true });
+watch(balanceFilter, () => { page.value = 1; });
+watch(search, () => { page.value = 1; load(); }, { immediate: true });
 onBeforeUnmount(() => { listRequest++; statementRequest++; });
 </script>
 
@@ -210,8 +217,9 @@ onBeforeUnmount(() => { listRequest++; statementRequest++; });
       <v-btn variant="text" @click="load">Reintentar</v-btn>
     </v-alert>
     <v-data-table
-      :items-per-page="-1"
-      hide-default-footer
+      v-model:page="page"
+      :items-per-page="50"
+      :items-per-page-options="[50]"
       :headers="headers"
       :items="filteredHouses"
       :loading="loading"
@@ -293,11 +301,12 @@ onBeforeUnmount(() => { listRequest++; statementRequest++; });
           </template>
         </v-data-table>
       </v-card-text>
-      <v-card-actions
-        ><v-spacer /><v-btn @click="dialog = false"
-          >Cerrar</v-btn
-        ></v-card-actions
-      >
+      <v-card-actions>
+        <v-btn color="primary" @click="chargeForm.open()">Nuevo cargo</v-btn>
+        <v-spacer />
+        <v-btn @click="dialog = false">Cerrar</v-btn>
+      </v-card-actions>
     </v-card>
   </v-dialog>
+  <ChargesView v-if="dialog && selected" ref="chargeForm" :house="selected" @saved="chargeSaved" />
 </template>

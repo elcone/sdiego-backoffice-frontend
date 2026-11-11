@@ -305,7 +305,6 @@ function clearFilters() {
       <div class="d-flex flex-wrap align-center justify-space-between ga-2">
         <div>
           <h1 class="text-h6">Movimientos bancarios</h1>
-          <div class="text-caption text-medium-emphasis">{{ latestMovementLabel }}</div>
         </div>
         <div class="d-flex flex-wrap align-center ga-2">
           <v-btn-toggle

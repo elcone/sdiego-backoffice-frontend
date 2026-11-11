@@ -99,6 +99,7 @@ test("layout uses responsive columns, equal metric cards, and a large plain bank
   assert.equal(descriptor.scriptSetup.content.includes("isClassified"), false);
   assert.ok(template.includes('class="text-h3 font-weight-semibold text-high-emphasis"'));
   const bank = template.slice(template.indexOf('<div class="py-2 mb-4">'), template.indexOf('<v-divider class="mb-4"'));
+  assert.ok(bank.includes('{{ money(bankBalance) }}</p>\n      <p class="text-body-2 text-medium-emphasis mt-1">{{ latestMovementLabel }}</p>'));
   assert.equal(bank.includes("<v-card"), false);
   assert.equal(bank.includes("<v-icon"), false);
   assert.equal((template.match(/<v-col cols="12" md="6">/g) || []).length, 2);
@@ -186,9 +187,9 @@ test("unrecognized income follows receivable in three equal responsive income ca
   const row = template.match(/<v-row class="mb-3">([\s\S]*?)<\/v-row>/)[1];
   assert.equal((row.match(/<v-col cols="12" sm="4">/g) || []).length, 3);
   assert.deepEqual([...row.matchAll(/<h3[^>]*>([^<]+)<\/h3>/g)].map(match => match[1]), [
-    "Ingresos del mes", "Saldo por cobrar", "Ingresos no reconocidos",
+    "Ingresos del mes", "Saldo por cobrar", "Ingresos sin identificar",
   ]);
-  const title = row.indexOf("Ingresos no reconocidos");
+  const title = row.indexOf("Ingresos sin identificar");
   const card = row.slice(row.lastIndexOf("<v-card ", title), row.indexOf("</v-card>", title) + "</v-card>".length);
   const render = new Function("Vue", compile(card, { mode: "function" }).code)(Vue);
   for (const [amount, expected] of [["1234.56", "$1,234.56"], ["0.00", "$0.00"]]) {
@@ -197,6 +198,26 @@ test("unrecognized income follows receivable in three equal responsive income ca
       key === "default" && typeof value === "function" ? value() : value,
     );
     assert.ok(output.includes(expected));
-    assert.ok(output.includes("Ingresos no reconocidos"));
+    assert.ok(output.includes("Ingresos sin identificar"));
   }
+});
+
+
+test("bank cutoff formats exact date and time in Mexico City and clears after failure", async () => {
+  const { state } = mount(url => url === "/api/summary/" ? data : {
+    balance: "1.00", latest_transaction_timestamp: "2026-11-01T05:35:00Z",
+  });
+  await settle();
+  assert.equal(state.latestMovementLabel, "Movimientos al 31/10/2026 23:35");
+  state.latestTransaction = "2021-07-01T05:15:00Z";
+  assert.equal(state.latestMovementLabel, "Movimientos al 01/07/2021 00:15");
+  state.latestTransaction = null;
+  assert.equal(state.latestMovementLabel, "Sin movimientos");
+  state.latestTransaction = "2026-11-01T06:00:00Z";
+  assert.equal(state.latestMovementLabel, "Movimientos al 01/11/2026 00:00");
+  globalThis.fetch = async () => { throw new Error("Sin conexión"); };
+  await state.load();
+  assert.equal(state.latestTransaction, null);
+  assert.ok(descriptor.template.content.includes("{{ latestMovementLabel }}"));
+  assert.equal(descriptor.template.content.includes('>Resumen</h1>'), false);
 });

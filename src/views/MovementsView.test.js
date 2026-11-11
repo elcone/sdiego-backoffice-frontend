@@ -314,7 +314,7 @@ test("summary supplies import permission and the latest recorded bank timestamp"
   assert.equal(state.canChange, false);
   assert.equal(state.latestTransaction, bank.transaction_timestamp);
   assert.match(descriptor.template.content, /v-if="canImport"/);
-  assert.match(descriptor.template.content, /latestMovementLabel/);
+  assert.doesNotMatch(descriptor.template.content, /latestMovementLabel/);
 });
 
 

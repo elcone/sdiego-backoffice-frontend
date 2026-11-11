@@ -1,10 +1,21 @@
 <script setup>
-import { onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import { request } from "../api/movements";
 import { money } from "../data/mock";
 
 const summary = ref(null);
 const bankBalance = ref(null);
+const latestTransaction = ref(null);
+const bankDateFormatter = new Intl.DateTimeFormat("es-MX", {
+  timeZone: "America/Mexico_City", day: "2-digit", month: "2-digit", year: "numeric",
+  hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+});
+const latestMovementLabel = computed(() => {
+  if (!latestTransaction.value) return "Sin movimientos";
+  const parts = Object.fromEntries(bankDateFormatter.formatToParts(new Date(latestTransaction.value))
+    .map(({ type, value }) => [type, value]));
+  return `Movimientos al ${parts.day}/${parts.month}/${parts.year} ${parts.hour}:${parts.minute}`;
+});
 const loading = ref(false);
 const error = ref("");
 let currentRequest = 0;
@@ -28,11 +39,13 @@ async function load() {
     if (current !== currentRequest) return;
     summary.value = data;
     bankBalance.value = bank.balance;
+    latestTransaction.value = bank.latest_transaction_timestamp;
   } catch (failure) {
     if (current === currentRequest) {
       error.value = failure.message;
       summary.value = null;
       bankBalance.value = null;
+      latestTransaction.value = null;
     }
   } finally {
     if (current === currentRequest) loading.value = false;
@@ -43,13 +56,13 @@ onBeforeUnmount(() => { currentRequest++; });
 </script>
 
 <template>
-  <h1 class="text-h6 mb-4">Resumen</h1>
   <v-progress-linear v-if="loading" indeterminate aria-label="Cargando resumen" />
   <v-alert v-if="error" type="error" variant="tonal">{{ error }}</v-alert>
   <template v-if="summary">
     <div class="py-2 mb-4">
       <p class="text-subtitle-1">Saldo en bancos</p>
       <p class="text-h3 font-weight-semibold text-high-emphasis">{{ money(bankBalance) }}</p>
+      <p class="text-body-2 text-medium-emphasis mt-1">{{ latestMovementLabel }}</p>
     </div>
     <v-divider class="mb-4" />
     <v-row>

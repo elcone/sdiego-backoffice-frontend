@@ -1,3 +1,4 @@
+import { providePagination, usePaginatedItems } from "vuetify/lib/components/VDataTable/composables/paginate.js";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { afterEach, test } from "node:test";
@@ -11,6 +12,7 @@ import { createRenderer, nextTick } from "vue";
 const filename = new URL("./HousesView.vue", import.meta.url);
 const { descriptor } = parse(await readFile(filename, "utf8"));
 const source = compileScript(descriptor, { id: "houses-test" }).content
+  .replace('import ChargesView from "./ChargesView.vue";', "const ChargesView = {};")
   .replaceAll('from "vue"', `from "${import.meta.resolve("vue")}"`)
 
   .replace('from "../data/mock"', `from "${new URL("../data/mock.js", import.meta.url)}"`)
@@ -186,8 +188,8 @@ test("statement cells show only their transaction amount and signed balance chip
 });
 test("template preserves account action and fixes list and statement presentation", () => {
   const template = descriptor.template.content;
-  assert.ok(template.includes('hide-default-footer'));
-  assert.ok(template.includes(':items-per-page="-1"'));
+  assert.equal(template.includes('hide-default-footer'), false);
+  assert.ok(template.includes(':items-per-page="50"'));
   assert.equal(template.includes('mandatory'), false);
   assert.equal(template.includes('multiple'), false);
   assert.equal(template.includes('value="all"'), false);
@@ -253,3 +255,70 @@ test("financial toggle exposes exactly the three requested icons using optional 
     assert.ok(group.includes(`icon="${icon}"`));
   }
 });
+
+
+test("balance filter spanning pages uses automatic filtered total and resets to page one", async () => {
+  const rows = Array.from({ length: 125 }, (_, index) => ({
+    ...house, id: index + 1, balance: index < 75 ? "10.00" : "0.00",
+  }));
+  const { state } = mount(url => url.includes("page=2")
+    ? { results: rows.slice(100), next: null }
+    : { results: rows.slice(0, 100), next: "/api/house/?page=2" });
+  await settle();
+  state.page = 3;
+  state.balanceFilter = "pending";
+  await settle();
+  assert.equal(state.page, 1);
+  const table = descriptor.template.content.match(/<v-data-table[\s\S]*?>/)[0];
+  const render = new Function("Vue", compile(table + "</v-data-table>", { mode: "function" }).code)(Vue);
+  const vnode = render(state);
+  assert.equal(vnode.props["items-per-page"], 50);
+  assert.equal(vnode.props.items.length, 75);
+  assert.equal(vnode.props["items-length"], undefined);
+  assert.equal(vnode.props["hide-default-footer"], undefined);
+  const { pager, close } = tablePagination(state, () => state.filteredHouses);
+  assert.equal(pager.itemsLength, 75);
+  assert.equal(pager.pageCount, 2);
+  pager.nextPage();
+  assert.equal(state.page, 2);
+  assert.deepEqual(pager.paginatedItems.map(row => row.id), rows.slice(50, 75).map(row => row.id));
+  state.balanceFilter = "current";
+  await settle();
+  assert.equal(state.page, 1);
+  assert.equal(state.filteredHouses.length, 50);
+  assert.equal(pager.pageCount, 1);
+  close();
+});
+
+test("successful charge creation reloads the selected statement and house balances", async () => {
+  let updated = false;
+  const { state, calls } = mount(url => url.includes("/statement/")
+    ? { ...statement, balance: updated ? "100.00" : statement.balance }
+    : { results: [{ ...house, balance: updated ? "100.00" : house.balance }] });
+  await settle();
+  await state.open(house);
+  updated = true;
+  await state.chargeSaved();
+  assert.equal(state.statement.balance, "100.00");
+  assert.equal(state.houses[0].balance, "100.00");
+  assert.equal(calls.filter(call => call.url === "/api/house/7/statement/").length, 2);
+  assert.ok(descriptor.template.content.includes(':house="selected" @saved="chargeSaved"'));
+  assert.ok(descriptor.template.content.includes('@click="chargeForm.open()"'));
+});
+
+
+function tablePagination(state, items) {
+  const paginationApp = renderer.createApp({
+    setup() {
+      const pagination = providePagination({
+        page: Vue.computed({ get: () => state.page, set: value => { state.page = value; } }),
+        itemsPerPage: Vue.ref(50), itemsLength: Vue.computed(() => items().length),
+      });
+      const { paginatedItems } = usePaginatedItems({ ...pagination, items });
+      return { ...pagination, paginatedItems };
+    },
+    render: () => null,
+  });
+  paginationApp.mount({});
+  return { pager: paginationApp._instance.setupState, close: () => paginationApp.unmount() };
+}

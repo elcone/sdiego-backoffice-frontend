@@ -1,3 +1,4 @@
+import { providePagination, usePaginatedItems } from "vuetify/lib/components/VDataTable/composables/paginate.js";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { afterEach, test } from "node:test";
@@ -343,3 +344,72 @@ test("due date cells leave missing dates empty and format existing dates", () =>
   }
   assert.equal(render({ item: { due_date: "2026-11-15" }, dateLabel: date => `Fecha ${date}` }), "Fecha 2026-11-15");
 });
+
+
+for (const kind of ["charge", "expense"]) {
+  test(`${kind} catalog reaches every page beyond fifty records`, async () => {
+    const rows = Array.from({ length: 125 }, (_, index) => ({ id: index + 1, name: `Tipo ${index + 1}` }));
+    const { state, calls } = mount("CatalogView", { kind }, url => url.includes("page=2")
+      ? { results: rows.slice(100), next: null }
+      : { results: rows.slice(0, 100), next: `/api/${kind}-type/?page=2` });
+    await settle();
+    const table = components.CatalogView.template.match(/<v-data-table[^>]*>/)[0];
+    const render = new Function("Vue", compile(table + "</v-data-table>", { mode: "function" }).code)(Vue);
+    const vnode = render(state);
+    assert.equal(vnode.props["items-per-page"], 50);
+    assert.deepEqual(vnode.props["items-per-page-options"], [50]);
+    assert.equal(vnode.props["hide-default-footer"], undefined);
+    assert.deepEqual(state.rows, rows);
+    assert.equal(calls.length, 2);
+    const { pager, close } = tablePagination(state, () => state.rows);
+    assert.equal(pager.pageCount, 3);
+    assert.equal(pager.itemsLength, 125);
+    for (const page of [2, 3]) {
+      pager.nextPage();
+      assert.equal(state.page, page);
+      assert.deepEqual(pager.paginatedItems, rows.slice((page - 1) * 50, page * 50));
+    }
+    close();
+  });
+}
+
+test("statement charge form preselects the house, posts to existing endpoint and emits only on success", async () => {
+  let saved = 0;
+  const { state, calls } = mount("ChargesView", { house: houses[1], onSaved: () => { saved++; } });
+  await settle();
+  state.open();
+  assert.equal(state.draft.mode, "individual");
+  assert.equal(state.draft.house, 8);
+  Object.assign(state.draft, { chargeType: 3, amount: "150.00", period: "2026-11-11" });
+  const fetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("Sin conexión"); };
+  await state.save();
+  assert.equal(saved, 0);
+  assert.equal(state.dialog, true);
+  assert.equal(state.saveError, "Sin conexión");
+  globalThis.fetch = fetch;
+  await state.save();
+  const write = calls.find(call => call.options.method === "POST");
+  assert.equal(write.url, "/api/charge/");
+  assert.equal(JSON.parse(write.options.body).house, 8);
+  assert.equal(saved, 1);
+  assert.equal(state.dialog, false);
+  assert.equal(calls.some(call => call.url.startsWith("/api/charge/?")), false);
+});
+
+
+function tablePagination(state, items) {
+  const paginationApp = renderer.createApp({
+    setup() {
+      const pagination = providePagination({
+        page: Vue.computed({ get: () => state.page, set: value => { state.page = value; } }),
+        itemsPerPage: Vue.ref(50), itemsLength: Vue.computed(() => items().length),
+      });
+      const { paginatedItems } = usePaginatedItems({ ...pagination, items });
+      return { ...pagination, paginatedItems };
+    },
+    render: () => null,
+  });
+  paginationApp.mount({});
+  return { pager: paginationApp._instance.setupState, close: () => paginationApp.unmount() };
+}

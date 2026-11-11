@@ -4,6 +4,8 @@ import { VDateInput } from "vuetify/labs/VDateInput";
 import { money, dateLabel } from "../data/mock";
 import { catalog, request } from "../api/movements";
 
+const props = defineProps({ house: { type: Object, default: null } });
+const emit = defineEmits(["saved"]);
 const search = ref("");
 const searchOpen = ref(false);
 const charges = ref([]);
@@ -23,7 +25,7 @@ async function load() {
   error.value = "";
   try {
     const [chargeRows, houseRows, typeRows] = await Promise.all([
-      catalog("charge"), catalog("house"), catalog("charge-type"),
+      props.house ? Promise.resolve([]) : catalog("charge"), catalog("house"), catalog("charge-type"),
     ]);
     if (current !== listRequest) return;
     charges.value = chargeRows;
@@ -60,6 +62,7 @@ async function save() {
       resultMessage.value = `Cargos creados: ${result.created_count}. Omitidos: ${result.skipped_count}.`;
       saved.value = true;
     }
+    emit("saved");
     await load();
   } catch (failure) {
     saveError.value = failure.message;
@@ -102,8 +105,8 @@ const filteredCharges = computed(() => {
 });
 function open() {
   Object.assign(draft, {
-    mode: "all",
-    house: null,
+    mode: props.house ? "individual" : "all",
+    house: props.house?.id ?? null,
     chargeType: null,
     amount: null,
     period: null,
@@ -113,10 +116,12 @@ function open() {
   saveError.value = "";
   dialog.value = true;
 }
+defineExpose({ open });
 </script>
 
 <template>
   <v-fab
+    v-if="!props.house"
     app
     layout
     icon
@@ -130,7 +135,7 @@ function open() {
     <v-icon icon="mdi-plus" />
     <v-tooltip activator="parent" text="Nuevo cargo" :activator-props="{ 'aria-label': 'Nuevo cargo' }" />
   </v-fab>
-  <v-card flat border>
+  <v-card v-if="!props.house" flat border>
     <v-card-text>
       <div class="d-flex align-center justify-space-between ga-3 mb-4">
         <h1 class="text-h6">Cargos</h1>
@@ -194,8 +199,12 @@ function open() {
   <v-dialog v-model="dialog" max-width="600" scrollable>
     <v-card elevation="0" flat border title="Nuevo cargo">
       <v-card-text>
+        <v-alert v-if="props.house && error" type="error" variant="tonal" class="mb-4">{{ error }}
+          <v-btn variant="text" @click="load">Reintentar</v-btn>
+        </v-alert>
         <v-alert v-if="saveError" type="error" variant="tonal" class="mb-4">{{ saveError }}</v-alert>
         <v-select
+          v-if="!props.house"
           v-model="draft.mode"
           label="Modalidad"
           :items="[
